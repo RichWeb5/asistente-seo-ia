@@ -1,25 +1,36 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/config/auth';
+import { protectApiRoute } from '@/lib/security/api-guard';
+import { sanitizeKeyword } from '@/lib/security/sanitize';
 import { generateEditorialPlan } from '@/services/ai-engine';
 
-// TODO: Rate limiting / credits check
-
 export async function POST(request) {
-  const session = await getServerSession(authOptions);
+  const guard = await protectApiRoute(request);
+  if (guard instanceof Response) return guard;
 
-  if (!session?.accessToken) {
-    return Response.json({ error: 'No autenticado' }, { status: 401 });
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'JSON inválido' }, { status: 400 });
+  }
+
+  const { keywords } = body;
+
+  if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+    return Response.json({ error: 'Se requiere un array de keywords' }, { status: 400 });
+  }
+
+  if (keywords.length > 200) {
+    return Response.json({ error: 'Máximo 200 keywords por solicitud' }, { status: 400 });
   }
 
   try {
-    const body = await request.json();
-    const { keywords } = body;
+    // Sanitize keywords
+    const sanitized = keywords.map((kw) => {
+      if (typeof kw === 'string') return sanitizeKeyword(kw);
+      return { ...kw, keyword: sanitizeKeyword(kw.keyword || '') };
+    }).filter((kw) => (typeof kw === 'string' ? kw : kw.keyword));
 
-    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-      return Response.json({ error: 'Se requiere un array de keywords' }, { status: 400 });
-    }
-
-    const result = generateEditorialPlan(keywords);
+    const result = generateEditorialPlan(sanitized);
 
     return Response.json(result);
   } catch (error) {

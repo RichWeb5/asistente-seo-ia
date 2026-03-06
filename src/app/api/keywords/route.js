@@ -1,28 +1,29 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/config/auth';
+import { protectApiRoute } from '@/lib/security/api-guard';
+import { sanitizeKeyword, sanitizeLanguageCode, sanitizeInt } from '@/lib/security/sanitize';
 import { getKeywordIdeas, getKeywordDifficulty } from '@/services/dataforseo';
 
-// TODO: Rate limiting / credits check
-
 export async function POST(request) {
-  const session = await getServerSession(authOptions);
+  const guard = await protectApiRoute(request, { limiterType: 'dataforseo' });
+  if (guard instanceof Response) return guard;
 
-  if (!session?.accessToken) {
-    return Response.json({ error: 'No autenticado' }, { status: 401 });
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'JSON inválido' }, { status: 400 });
+  }
+
+  const keyword = sanitizeKeyword(body.keyword);
+  const language = sanitizeLanguageCode(body.language);
+  const location = sanitizeInt(body.location, 1, 999999, 2724);
+
+  if (!keyword) {
+    return Response.json({ error: 'Se requiere una palabra clave válida' }, { status: 400 });
   }
 
   try {
-    const body = await request.json();
-    const { keyword, language = 'es', location = 2724 } = body;
-
-    if (!keyword) {
-      return Response.json({ error: 'Se requiere una palabra clave' }, { status: 400 });
-    }
-
-    // Obtener ideas de keywords
     const ideas = await getKeywordIdeas(keyword, language, location);
 
-    // Obtener dificultad para las keywords
     const keywordList = ideas.map((i) => i.keyword).slice(0, 100);
     let difficultyMap = {};
 
@@ -34,7 +35,6 @@ export async function POST(request) {
       }
     }
 
-    // Combinar resultados
     const keywords = ideas.map((idea) => ({
       ...idea,
       difficulty: difficultyMap[idea.keyword] || 0,

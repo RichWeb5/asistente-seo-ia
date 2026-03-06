@@ -1,32 +1,48 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/config/auth';
-
-// TODO: Rate limiting / credits check
+import { protectApiRoute } from '@/lib/security/api-guard';
+import { sanitizeKeyword } from '@/lib/security/sanitize';
 
 export async function POST(request) {
-  const session = await getServerSession(authOptions);
+  const guard = await protectApiRoute(request);
+  if (guard instanceof Response) return guard;
 
-  if (!session?.accessToken) {
-    return Response.json({ error: 'No autenticado' }, { status: 401 });
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'JSON inválido' }, { status: 400 });
+  }
+
+  const { keywords } = body;
+
+  if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+    return Response.json({ error: 'Se requiere un array de keywords' }, { status: 400 });
+  }
+
+  // Limit array size to prevent abuse
+  if (keywords.length > 500) {
+    return Response.json({ error: 'Máximo 500 keywords por solicitud' }, { status: 400 });
   }
 
   try {
-    const body = await request.json();
-    const { keywords } = body;
-
-    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-      return Response.json({ error: 'Se requiere un array de keywords' }, { status: 400 });
-    }
+    // Sanitize each keyword
+    const sanitizedKeywords = keywords.map((kw) => {
+      if (typeof kw === 'string') {
+        return { keyword: sanitizeKeyword(kw), intent: 'informational', volume: 0, difficulty: 0, competition: 0 };
+      }
+      return {
+        ...kw,
+        keyword: sanitizeKeyword(kw.keyword || ''),
+      };
+    }).filter((kw) => kw.keyword);
 
     // Agrupar por intención
     const groups = {};
-    keywords.forEach((kw) => {
+    sanitizedKeywords.forEach((kw) => {
       const intent = kw.intent || 'informational';
       if (!groups[intent]) groups[intent] = [];
       groups[intent].push(kw);
     });
 
-    // Sub-agrupar por similitud semántica (n-gram overlap)
     const clusters = [];
 
     Object.entries(groups).forEach(([intent, kws]) => {
@@ -46,13 +62,11 @@ export async function POST(request) {
       });
     });
 
-    // Detectar oportunidades long-tail
-    const longTailOpportunities = keywords.filter((kw) => {
+    const longTailOpportunities = sanitizedKeywords.filter((kw) => {
       const wordCount = kw.keyword.split(/\s+/).length;
       return wordCount >= 3 && (kw.competition || 0) < 0.5 && (kw.volume || 0) > 10;
     });
 
-    // Ordenar clusters por volumen promedio
     clusters.sort((a, b) => b.avgVolume - a.avgVolume);
 
     return Response.json({
@@ -66,9 +80,6 @@ export async function POST(request) {
   }
 }
 
-/**
- * Agrupa keywords por similitud semántica usando n-gram overlap.
- */
 function clusterBySemanticSimilarity(keywords) {
   if (keywords.length <= 1) return [keywords];
 
@@ -88,7 +99,6 @@ function clusterBySemanticSimilarity(keywords) {
 
       const wordsB = new Set(keywords[j].keyword.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
 
-      // Calcular overlap
       let overlap = 0;
       wordsA.forEach((w) => {
         if (wordsB.has(w)) overlap++;

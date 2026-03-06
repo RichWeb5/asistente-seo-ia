@@ -1,20 +1,23 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/config/auth';
+import { protectApiRoute, validateSiteOwnership } from '@/lib/security/api-guard';
+import { sanitizeSiteUrl } from '@/lib/security/sanitize';
 import { getTopQueries, getTopPages } from '@/utils/google/gsc';
 import { generateRecommendations } from '@/utils/seo-analyzer';
 
 export async function GET(request) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.accessToken) {
-    return Response.json({ error: 'No autenticado' }, { status: 401 });
-  }
+  const guard = await protectApiRoute(request);
+  if (guard instanceof Response) return guard;
+  const { session } = guard;
 
   const { searchParams } = new URL(request.url);
-  const siteUrl = searchParams.get('siteUrl');
+  const siteUrl = sanitizeSiteUrl(searchParams.get('siteUrl'));
 
   if (!siteUrl) {
-    return Response.json({ error: 'Se requiere siteUrl' }, { status: 400 });
+    return Response.json({ error: 'Se requiere un siteUrl válido' }, { status: 400 });
+  }
+
+  const isOwner = await validateSiteOwnership(session.accessToken, siteUrl);
+  if (!isOwner) {
+    return Response.json({ error: 'No tienes acceso a este sitio' }, { status: 403 });
   }
 
   const endDate = new Date();

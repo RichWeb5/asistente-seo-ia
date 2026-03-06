@@ -1,13 +1,10 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/config/auth';
+import { protectApiRoute } from '@/lib/security/api-guard';
 import { getSites } from '@/utils/google/gsc';
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.accessToken) {
-    return Response.json({ error: 'No autenticado' }, { status: 401 });
-  }
+export async function GET(request) {
+  const guard = await protectApiRoute(request);
+  if (guard instanceof Response) return guard;
+  const { session } = guard;
 
   try {
     const sites = await getSites(session.accessToken);

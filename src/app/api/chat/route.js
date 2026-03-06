@@ -1,26 +1,36 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/config/auth';
+import { protectApiRoute, validateSiteOwnership } from '@/lib/security/api-guard';
+import { sanitizeChatInput, sanitizeSiteUrl } from '@/lib/security/sanitize';
 import { getTopQueries, getTopPages, getDailyMetrics } from '@/utils/google/gsc';
 import { generateSummary } from '@/utils/seo-analyzer';
 import { processQuestion } from '@/utils/chat-engine';
 
 export async function POST(request) {
-  const session = await getServerSession(authOptions);
+  const guard = await protectApiRoute(request, { limiterType: 'chat' });
+  if (guard instanceof Response) return guard;
+  const { session } = guard;
 
-  if (!session?.accessToken) {
-    return Response.json({ error: 'No autenticado' }, { status: 401 });
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'JSON inválido' }, { status: 400 });
   }
 
-  const { question, siteUrl } = await request.json();
+  const question = sanitizeChatInput(body.question);
+  const siteUrl = sanitizeSiteUrl(body.siteUrl);
 
   if (!question) {
-    return Response.json({ error: 'Se requiere una pregunta' }, { status: 400 });
+    return Response.json({ error: 'Se requiere una pregunta válida' }, { status: 400 });
   }
 
   let siteData = {};
 
-  // Si hay un sitio seleccionado, obtener datos para contexto
   if (siteUrl) {
+    const isOwner = await validateSiteOwnership(session.accessToken, siteUrl);
+    if (!isOwner) {
+      return Response.json({ error: 'No tienes acceso a este sitio' }, { status: 403 });
+    }
+
     try {
       const endDate = new Date();
       const startDate = new Date();

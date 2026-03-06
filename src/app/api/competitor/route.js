@@ -1,5 +1,5 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/config/auth';
+import { protectApiRoute } from '@/lib/security/api-guard';
+import { sanitizeDomain, sanitizeLanguageCode, sanitizeInt } from '@/lib/security/sanitize';
 import {
   getDomainKeywords,
   getDomainPages,
@@ -7,30 +7,32 @@ import {
   getCompetitorGap,
 } from '@/services/dataforseo';
 
-// TODO: Rate limiting / credits check
-
 export async function POST(request) {
-  const session = await getServerSession(authOptions);
+  const guard = await protectApiRoute(request, { limiterType: 'dataforseo' });
+  if (guard instanceof Response) return guard;
 
-  if (!session?.accessToken) {
-    return Response.json({ error: 'No autenticado' }, { status: 401 });
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'JSON inválido' }, { status: 400 });
+  }
+
+  const competitorDomain = sanitizeDomain(body.competitorDomain);
+  const userDomain = body.userDomain ? sanitizeDomain(body.userDomain) : '';
+  const language = sanitizeLanguageCode(body.language);
+  const location = sanitizeInt(body.location, 1, 999999, 2724);
+
+  if (!competitorDomain) {
+    return Response.json({ error: 'Se requiere un dominio de competidor válido' }, { status: 400 });
   }
 
   try {
-    const body = await request.json();
-    const { competitorDomain, userDomain, language = 'es', location = 2724 } = body;
-
-    if (!competitorDomain) {
-      return Response.json({ error: 'Se requiere el dominio del competidor' }, { status: 400 });
-    }
-
-    // Ejecutar todas las consultas en paralelo
     const promises = [
       getDomainKeywords(competitorDomain, language, location),
       getDomainPages(competitorDomain, language, location),
     ];
 
-    // Solo buscar intersección y gaps si hay dominio del usuario
     if (userDomain) {
       promises.push(
         getKeywordsIntersection(userDomain, competitorDomain, language, location),
@@ -45,7 +47,6 @@ export async function POST(request) {
     const sharedKeywords = results[2] || [];
     const gapKeywords = results[3] || [];
 
-    // Calcular resumen
     const summary = {
       totalCompetitorKeywords: competitorKeywords.length,
       totalCompetitorPages: competitorPages.length,
