@@ -1,5 +1,3 @@
-import GoogleProvider from 'next-auth/providers/google';
-
 /**
  * Refreshes an expired Google OAuth access token using the refresh token.
  */
@@ -38,11 +36,16 @@ async function refreshAccessToken(token) {
  * NextAuth configuration options.
  */
 export const authOptions = {
+  // Custom OAuth provider — bypasses OIDC discovery (uses https.request,
+  // which is not available in Cloudflare Workers via unenv).
+  // Endpoints are defined explicitly so only fetch() is used.
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    {
+      id: 'google',
+      name: 'Google',
+      type: 'oauth',
       authorization: {
+        url: 'https://accounts.google.com/o/oauth2/v2/auth',
         params: {
           scope: [
             'openid',
@@ -55,7 +58,21 @@ export const authOptions = {
           response_type: 'code',
         },
       },
-    }),
+      token: 'https://oauth2.googleapis.com/token',
+      userinfo: 'https://openidconnect.googleapis.com/v1/userinfo',
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      idToken: true,
+      checks: ['state'],
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+        };
+      },
+    },
   ],
   callbacks: {
     async jwt({ token, account }) {
