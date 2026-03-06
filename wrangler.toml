@@ -11,14 +11,14 @@ routes = [
 ]
 
 # ---------------------------------------------------------------
-# ONLY non-secret configuration goes here.
-# Secrets MUST be set via: wrangler secret put <SECRET_NAME>
+# Secrets are injected at deploy time from Cloudflare Build Variables.
+# See scripts/inject-env.js
 #
-# Required secrets (run these commands once):
-#   wrangler secret put GOOGLE_CLIENT_SECRET
-#   wrangler secret put NEXTAUTH_SECRET
-#   wrangler secret put DATAFORSEO_LOGIN
-#   wrangler secret put DATAFORSEO_PASSWORD
+# Required Build Variables in Cloudflare dashboard:
+#   GOOGLE_CLIENT_SECRET
+#   NEXTAUTH_SECRET
+#   DATAFORSEO_LOGIN     (optional)
+#   DATAFORSEO_PASSWORD  (optional)
 # ---------------------------------------------------------------
 [vars]
 NEXTAUTH_URL = "https://analyseo.app"
