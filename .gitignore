@@ -6,3 +6,6 @@ out/
 .vercel/
 .claude/
 .vercel
+.open-next/
+.dev.vars
+wrangler.toml
