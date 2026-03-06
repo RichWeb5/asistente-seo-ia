@@ -60,6 +60,7 @@ export const authOptions = {
       },
       token: 'https://oauth2.googleapis.com/token',
       userinfo: 'https://openidconnect.googleapis.com/v1/userinfo',
+      issuer: 'https://accounts.google.com',
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       idToken: true,
