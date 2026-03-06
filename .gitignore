@@ -10,7 +10,8 @@ out/
 .env.production
 .env.staging
 .dev.vars
-wrangler.toml
+
+# wrangler.toml is safe to commit (secrets use wrangler secret put)
 
 # Platform
 .vercel/
